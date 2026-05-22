@@ -1,39 +1,10 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import time
-import os
-import secrets
-import hashlib
 from collections import deque
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
-
-# ── Authentification ───────────────────────────────────────────────────────────
-PASSWORD = os.environ.get('APP_PASSWORD', 'Soleil!Lune92i!Mars')
-TOKENS = set()   # tokens de session valides (en mémoire)
-
-def check_token():
-    """Vérifie le token dans le header X-Auth-Token. Retourne True si valide."""
-    token = request.headers.get('X-Auth-Token', '')
-    return token in TOKENS
-
-@app.route('/api/login', methods=['POST'])
-def login():
-    data = request.json or {}
-    pwd = data.get('password', '')
-    if pwd == PASSWORD:
-        token = secrets.token_hex(32)
-        TOKENS.add(token)
-        return jsonify({"ok": True, "token": token})
-    return jsonify({"ok": False, "error": "Mot de passe incorrect"}), 401
-
-@app.route('/api/logout', methods=['POST'])
-def logout():
-    data = request.json or {}
-    token = data.get('token', '') or request.headers.get('X-Auth-Token', '')
-    TOKENS.discard(token)
-    return jsonify({"ok": True})
 
 # ── Stockage multi-PC ─────────────────────────────────────────────────────────
 pcs = {}
@@ -57,12 +28,10 @@ def get_or_create_pc(pc_id, name=None):
 def index():
     return send_from_directory('static', 'index.html')
 
-# ── Routes appelées par le SITE WEB (protégées) ───────────────────────────────
+# ── Routes appelées par le SITE WEB ──────────────────────────────────────────
 
 @app.route('/api/pcs')
 def list_pcs():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     now = time.time()
     result = []
     for pc_id, pc in pcs.items():
@@ -75,8 +44,6 @@ def list_pcs():
 
 @app.route('/api/status')
 def status():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     pc_id = request.args.get('pc_id')
     if not pc_id or pc_id not in pcs:
         return jsonify({"online": False})
@@ -85,8 +52,6 @@ def status():
 
 @app.route('/api/send', methods=['POST'])
 def send_command():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     data = request.json
     if not data or 'type' not in data:
         return jsonify({"error": "Commande invalide"}), 400
@@ -104,8 +69,6 @@ def send_command():
 
 @app.route('/api/windows')
 def get_windows():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     pc_id = request.args.get('pc_id')
     if not pc_id or pc_id not in pcs:
         return jsonify({"windows": []})
@@ -113,8 +76,6 @@ def get_windows():
 
 @app.route('/api/screenshot')
 def get_screenshot():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     pc_id = request.args.get('pc_id')
     if not pc_id or pc_id not in pcs:
         return jsonify({"image": None})
@@ -122,14 +83,12 @@ def get_screenshot():
 
 @app.route('/api/clipboard')
 def get_clipboard():
-    if not check_token():
-        return jsonify({"error": "Non autorisé"}), 401
     pc_id = request.args.get('pc_id')
     if not pc_id or pc_id not in pcs:
         return jsonify({"text": None})
     return jsonify({"text": pcs[pc_id].get("clipboard")})
 
-# ── Routes appelées par le CLIENT PC (pas de token nécessaire) ────────────────
+# ── Routes appelées par le CLIENT PC ─────────────────────────────────────────
 
 @app.route('/api/poll')
 def poll():
@@ -180,5 +139,6 @@ def clipboard_result():
     return jsonify({"ok": True})
 
 if __name__ == '__main__':
+    import os
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
